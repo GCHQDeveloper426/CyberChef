@@ -12,19 +12,19 @@ import OperationError from "../errors/OperationError.mjs";
 import Snappy from "../lib/Snappy.mjs";  // need to add this file
 
 /**
- * Protobuf Encode operation
+ * Snappy Decompress operation
  */
-class ProtobufEncode extends Operation {
+class SnappyDecompress extends Operation {
 
     /**
-     * ProtobufEncode constructor
+     * SnappyDecompress constructor
      */
     constructor() {
         super();
 
-        this.name = "Protobuf Encode";
-        this.module = "Protobuf";
-        this.description = "Encodes a valid JSON object into a protobuf byte array using the input .proto schema.";
+        this.name = "Snappy Decompress";
+        this.module = "Snappy";
+        this.description = "Decompresses Snappy compressed data.";
         this.infoURL = "";
         this.inputType = "ArrayBuffer";
         this.outputType = "ArrayBuffer";
@@ -42,4 +42,4 @@ class ProtobufEncode extends Operation {
 
 }
 
-export default ProtobufEncode;
+export default SnappyDecompress;
