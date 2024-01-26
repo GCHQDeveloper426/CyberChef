@@ -3,7 +3,7 @@
 
 /**
  * @author GCHQ Contributor [426]
- * @copyright Crown Copyright 2021
+ * @copyright Crown Copyright 2024
  * @license Apache-2.0
  */
 
