@@ -21,7 +21,7 @@ class SnappyCompress extends Operation {
         super();
 
         this.name = "Snappy Compress";
-        this.module = "Snappy";
+        this.module = "Default";
         this.description = "Snappy Compresses data.";
         this.infoURL = "";
         this.inputType = "ArrayBuffer";

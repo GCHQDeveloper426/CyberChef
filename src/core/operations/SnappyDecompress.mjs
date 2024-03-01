@@ -23,12 +23,16 @@ class SnappyDecompress extends Operation {
         super();
 
         this.name = "Snappy Decompress";
-        this.module = "Snappy";
+        this.module = "Default";
         this.description = "Decompresses Snappy compressed data.";
         this.infoURL = "";
         this.inputType = "ArrayBuffer";
         this.outputType = "ArrayBuffer";
-        this.args = [];
+        this.args = [{
+            name: "Delimiter",
+            type: "option",
+            value: ["Raw", "Framed(sNaPpY)"]
+        }];
     }
 
     /**
@@ -37,9 +41,20 @@ class SnappyDecompress extends Operation {
      * @returns {ArrayBuffer}
      */
     run(input, args) {
-        return Snappy.decompress(input);
-    }
+        const snappy_type = args[0];
+        let offset = 0;
+        let data = "";
+        const buffer = new Uint8Array(input);
 
+        if (snappy_type == "Framed(sNaPpY)") {
+            while (offset < buffer.byteLength) {
+                [offset, data] = Snappy.stripFrame(buffer, offset);
+                return Snappy.uncompress(data);
+            }
+        } else {
+            return Snappy.uncompress(input);
+        }
+    }
 }
 
 export default SnappyDecompress;

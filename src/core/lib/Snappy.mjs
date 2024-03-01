@@ -22,13 +22,15 @@
 
 'use strict'
 
+import OperationError from "../errors/OperationError.mjs"
+
+// Compression Functions 
+
 var BLOCK_LOG = 16
 var BLOCK_SIZE = 1 << BLOCK_LOG
 
 var MAX_HASH_TABLE_BITS = 14
 var globalHashTables = new Array(MAX_HASH_TABLE_BITS + 1)
-
-// Compression Functions 
 
 function hashFunc (key, hashFuncShift) {
   return (key * 0x1e35a7bd) >>> hashFuncShift
@@ -237,13 +239,6 @@ SnappyCompressor.prototype.compressToBuffer = function (outBuffer) {
 
 var WORD_MASK = [0, 0xff, 0xffff, 0xffffff, 0xffffffff]
 
-/*function copyBytes (fromArray, fromPos, toArray, toPos, length) {
-  var i
-  for (i = 0; i < length; i++) {
-    toArray[toPos + i] = fromArray[fromPos + i]
-  }
-}*/
-
 function selfCopyBytes (array, pos, offset, length) {
   var i
   for (i = 0; i < length; i++) {
@@ -344,7 +339,6 @@ SnappyDecompressor.prototype.uncompressToBuffer = function (outBuffer) {
 
 // Index Wrapper
 
-
 function isNode () {
   if (typeof process === 'object') {
     if (typeof process.versions === 'object') {
@@ -371,180 +365,131 @@ function isBuffer (object) {
   return Buffer.isBuffer(object)
 }
 
-
-//var SnappyDecompressor = require('./snappy_decompressor').SnappyDecompressor
-//var SnappyCompressor = require('./snappy_compressor').SnappyCompressor
-
+// Exportable SnappyLib Object
+// compress and uncompress functions on the library.
 
 const Snappy = {
-    TYPE_ERROR_MSG: 'Argument compressed must be type of ArrayBuffer, Buffer, or Uint8Array',
-    uncompress: function(compressed) {
-      if (!isUint8Array(compressed) && !isArrayBuffer(compressed) && !isBuffer(compressed)) {
-        throw new TypeError(TYPE_ERROR_MSG)
+
+  TYPE_ERROR_MSG: 'Argument compressed must be type of ArrayBuffer, Buffer, or Uint8Array',
+
+  stripFrame: function(buffer, offset) {
+    let endOffset = 0;
+    let compressed_snappy_len = 0;
+    let compressed_snappy = "";
+
+    if ((offset+18) >= buffer.byteLength) {
+      throw OperationError("Insufficient buffer to read headers")
+    } else {
+      offset+=11;
+      [offset, compressed_snappy_len] = getCompressedSnappyLength(buffer, offset);
+      offset+=4;
+      if ((offset+compressed_snappy_len) > buffer.byteLength) {
+        throw OperationError("Insufficient buffer to read compressed snappy")
+      } else {
+        endOffset = offset + compressed_snappy_len;
+        compressed_snappy = buffer.slice(offset, endOffset);
       }
-      var uint8Mode = false
-      var arrayBufferMode = false
-      if (isUint8Array(compressed)) {
-        uint8Mode = true
-      } else if (isArrayBuffer(compressed)) {
-        arrayBufferMode = true
-        compressed = new Uint8Array(compressed)
-      }
-      var decompressor = new SnappyDecompressor(compressed)
-      var length = decompressor.readUncompressedLength()
-      if (length === -1) {
+
+      return [offset, typedArrayToBuffer(compressed_snappy)];
+    }
+  },
+  
+  uncompress: function(compressed, maxLength) {
+    if (!isUint8Array(compressed) && !isArrayBuffer(compressed) && !isBuffer(compressed)) {
+      throw new TypeError(TYPE_ERROR_MSG)
+    }
+    var uint8Mode = false
+    var arrayBufferMode = false
+    if (isUint8Array(compressed)) {
+      uint8Mode = true
+    } else if (isArrayBuffer(compressed)) {
+      arrayBufferMode = true
+      compressed = new Uint8Array(compressed)
+    }
+    var decompressor = new SnappyDecompressor(compressed)
+    var length = decompressor.readUncompressedLength()
+    if (length === -1) {
+      throw new Error(' Snappy bitstream')
+    }
+    if (length > maxLength) {
+      throw new Error(`The uncompressed length of ${length} is too big, expect at most ${maxLength}`)
+    }
+    var uncompressed, uncompressedView
+    if (uint8Mode) {
+      uncompressed = new Uint8Array(length)
+      if (!decompressor.uncompressToBuffer(uncompressed)) {
         throw new Error('Invalid Snappy bitstream')
       }
-      if (length > maxLength) {
-        throw new Error(`The uncompressed length of ${length} is too big, expect at most ${maxLength}`)
-      }
-      var uncompressed, uncompressedView
-      if (uint8Mode) {
-        uncompressed = new Uint8Array(length)
-        if (!decompressor.uncompressToBuffer(uncompressed)) {
-          throw new Error('Invalid Snappy bitstream')
-        }
-      } else if (arrayBufferMode) {
-        uncompressed = new ArrayBuffer(length)
-        uncompressedView = new Uint8Array(uncompressed)
-        if (!decompressor.uncompressToBuffer(uncompressedView)) {
-          throw new Error('Invalid Snappy bitstream')
-        }
-      } else {
-        uncompressed = Buffer.alloc(length)
-        if (!decompressor.uncompressToBuffer(uncompressed)) {
-          throw new Error('Invalid Snappy bitstream')
-        }
-  }
-  return uncompressed              
-},
-    compress: function(uncompressed) {
-      if (!isUint8Array(uncompressed) && !isArrayBuffer(uncompressed) && !isBuffer(uncompressed)) {
-        throw new TypeError(TYPE_ERROR_MSG)
-      }
-      var uint8Mode = false
-      var arrayBufferMode = false
-      if (isUint8Array(uncompressed)) {
-        uint8Mode = true
-      } else if (isArrayBuffer(uncompressed)) {
-        arrayBufferMode = true
-        uncompressed = new Uint8Array(uncompressed)
-      }
-      var compressor = new SnappyCompressor(uncompressed)
-      var maxLength = compressor.maxCompressedLength()
-      var compressed, compressedView
-      var length
-      if (uint8Mode) {
-        compressed = new Uint8Array(maxLength)
-        length = compressor.compressToBuffer(compressed)
-      } else if (arrayBufferMode) {
-        compressed = new ArrayBuffer(maxLength)
-        compressedView = new Uint8Array(compressed)
-        length = compressor.compressToBuffer(compressedView)
-      } else {
-        compressed = Buffer.alloc(maxLength)
-        length = compressor.compressToBuffer(compressed)
-      }
-      if (!compressed.slice) { // ie11
-        var compressedArray = new Uint8Array(Array.prototype.slice.call(compressed, 0, length))
-        if (uint8Mode) {
-          return compressedArray
-        } else if (arrayBufferMode) {
-          return compressedArray.buffer
-        } else {
-          throw new Error('Not implemented')
-        }
-      }
-    
-      return compressed.slice(0, length)
-    }
-}
-
-
-
-/*
-var TYPE_ERROR_MSG = 'Argument compressed must be type of ArrayBuffer, Buffer, or Uint8Array'
-
-function uncompress (compressed, maxLength) {
-  if (!isUint8Array(compressed) && !isArrayBuffer(compressed) && !isBuffer(compressed)) {
-    throw new TypeError(TYPE_ERROR_MSG)
-  }
-  var uint8Mode = false
-  var arrayBufferMode = false
-  if (isUint8Array(compressed)) {
-    uint8Mode = true
-  } else if (isArrayBuffer(compressed)) {
-    arrayBufferMode = true
-    compressed = new Uint8Array(compressed)
-  }
-  var decompressor = new SnappyDecompressor(compressed)
-  var length = decompressor.readUncompressedLength()
-  if (length === -1) {
-    throw new Error('Invalid Snappy bitstream')
-  }
-  if (length > maxLength) {
-    throw new Error(`The uncompressed length of ${length} is too big, expect at most ${maxLength}`)
-  }
-  var uncompressed, uncompressedView
-  if (uint8Mode) {
-    uncompressed = new Uint8Array(length)
-    if (!decompressor.uncompressToBuffer(uncompressed)) {
-      throw new Error('Invalid Snappy bitstream')
-    }
-  } else if (arrayBufferMode) {
-    uncompressed = new ArrayBuffer(length)
-    uncompressedView = new Uint8Array(uncompressed)
-    if (!decompressor.uncompressToBuffer(uncompressedView)) {
-      throw new Error('Invalid Snappy bitstream')
-    }
-  } else {
-    uncompressed = Buffer.alloc(length)
-    if (!decompressor.uncompressToBuffer(uncompressed)) {
-      throw new Error('Invalid Snappy bitstream')
-    }
-  }
-  return uncompressed
-}
-
-function compress (uncompressed) {
-  if (!isUint8Array(uncompressed) && !isArrayBuffer(uncompressed) && !isBuffer(uncompressed)) {
-    throw new TypeError(TYPE_ERROR_MSG)
-  }
-  var uint8Mode = false
-  var arrayBufferMode = false
-  if (isUint8Array(uncompressed)) {
-    uint8Mode = true
-  } else if (isArrayBuffer(uncompressed)) {
-    arrayBufferMode = true
-    uncompressed = new Uint8Array(uncompressed)
-  }
-  var compressor = new SnappyCompressor(uncompressed)
-  var maxLength = compressor.maxCompressedLength()
-  var compressed, compressedView
-  var length
-  if (uint8Mode) {
-    compressed = new Uint8Array(maxLength)
-    length = compressor.compressToBuffer(compressed)
-  } else if (arrayBufferMode) {
-    compressed = new ArrayBuffer(maxLength)
-    compressedView = new Uint8Array(compressed)
-    length = compressor.compressToBuffer(compressedView)
-  } else {
-    compressed = Buffer.alloc(maxLength)
-    length = compressor.compressToBuffer(compressed)
-  }
-  if (!compressed.slice) { // ie11
-    var compressedArray = new Uint8Array(Array.prototype.slice.call(compressed, 0, length))
-    if (uint8Mode) {
-      return compressedArray
     } else if (arrayBufferMode) {
-      return compressedArray.buffer
+      uncompressed = new ArrayBuffer(length)
+      uncompressedView = new Uint8Array(uncompressed)
+      if (!decompressor.uncompressToBuffer(uncompressedView)) {
+        throw new Error('Invalid Snappy bitstream')
+      }
     } else {
-      throw new Error('Not implemented')
+      uncompressed = Buffer.alloc(length)
+      if (!decompressor.uncompressToBuffer(uncompressed)) {
+        throw new Error('Invalid Snappy bitstream')
+      }
     }
-  }
+    return uncompressed
+  },
+  compress: function(uncompressed) {
+    if (!isUint8Array(uncompressed) && !isArrayBuffer(uncompressed) && !isBuffer(uncompressed)) {
+      throw new TypeError(TYPE_ERROR_MSG)
+    }
+    var uint8Mode = false
+    var arrayBufferMode = false
+    if (isUint8Array(uncompressed)) {
+      uint8Mode = true
+    } else if (isArrayBuffer(uncompressed)) {
+      arrayBufferMode = true
+      uncompressed = new Uint8Array(uncompressed)
+    }
+    var compressor = new SnappyCompressor(uncompressed)
+    var maxLength = compressor.maxCompressedLength()
+    var compressed, compressedView
+    var length
+    if (uint8Mode) {
+      compressed = new Uint8Array(maxLength)
+      length = compressor.compressToBuffer(compressed)
+    } else if (arrayBufferMode) {
+      compressed = new ArrayBuffer(maxLength)
+      compressedView = new Uint8Array(compressed)
+      length = compressor.compressToBuffer(compressedView)
+    } else {
+      compressed = Buffer.alloc(maxLength)
+      length = compressor.compressToBuffer(compressed)
+    }
+    if (!compressed.slice) {
+      var compressedArray = new Uint8Array(Array.prototype.slice.call(compressed, 0, length))
+      if (uint8Mode) {
+        return compressedArray
+      } else if (arrayBufferMode) {
+        return compressedArray.buffer
+      } else {
+        throw new Error('Not implemented')
+      }
+    }
+  
+    return compressed.slice(0, length)
+  },
+}
 
-  return compressed.slice(0, length)
-}*/
+
+function getCompressedSnappyLength(buffer, offset) {
+  const lenBytes = buffer.subarray(offset, offset+3);
+  offset+=3;
+
+  // calculates the length of a little endian 3 byte length
+  const len = ((lenBytes[0]) | (lenBytes[1] << 8) | (lenBytes[2] << 16))
+
+  return [offset, len];
+}
+
+function typedArrayToBuffer(array) {
+  return array.buffer.slice(array.byteOffset, array.byteLength + array.byteOffset);
+}
 
 export default Snappy;
+
