@@ -23,7 +23,7 @@ class SnappyDecompress extends Operation {
         super();
 
         this.name = "Snappy Decompress";
-        this.module = "Default";
+        this.module = "Compression";
         this.description = "Decompresses Snappy compressed data.";
         this.infoURL = "";
         this.inputType = "ArrayBuffer";
